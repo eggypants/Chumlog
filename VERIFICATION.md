@@ -33,11 +33,15 @@ Covered flows:
 
 `npm run build` produces the static `dist/` directory. Source JavaScript syntax and local asset references are checked separately. The shipped app has no runtime packages or remote font/script imports.
 
+## Live browser check (20 September 2026)
+
+GitHub Actions passed all 24 automated tests, built version 1.1.0, and deployed successfully (commit `3fb45348c41589f0370076089f5076421e276800`). The live site was checked in remote Chrome at `https://eggypants.github.io/Chumlog/`.
+
+A disposable person, birthday, completed undated thing and contact with no note were created using v1. After the service-worker Reload update, the birthday appeared under Important dates, the completed context remained under Reminders → Done, and the empty contact note was omitted. An emoji and a second important date were saved; Coming up displayed both labelled dates. People displayed Last contact and the sort selector; Random person opened the profile. Records persisted after a further refresh. Desktop layout was visually inspected.
+
 ## Checks still requiring a browser/device
 
-The remote browser preview could not be reached in this build environment. Accordingly, visual layout, native dialog focus behaviour, real IndexedDB browser persistence, real offline installation/update behaviour, downloads/import file picking, and screen-reader operation have **not** been verified in Chrome or Safari. DOM tests do not establish those browser guarantees.
-
-The project is published at `https://eggypants.github.io/Chumlog/`. Version 1.1 deployment status is recorded in GitHub Actions. Browser/device limitations above still apply.
+Physical iPhone/Safari, narrow-viewport visual layout, screen-reader operation, and actual airplane-mode behaviour have not been verified. Export/import and offline logic have automated coverage; real browser file picking/download round trips remain unverified.
 
 After publishing, use disposable test records to check:
 
