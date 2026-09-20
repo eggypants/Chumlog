@@ -2,7 +2,7 @@
 
 Log your chums.
 
-A small, static, device-local web app. People, notes, things to ask about, contact history, birthdays, dated reminders, search, and manual JSON backup. No account, backend, analytics, remote fonts, push notifications, or runtime dependencies.
+A small, static, device-local web app. People with optional emoji icons, notes, contact history, labelled important dates, reminders, sorting, random person, search, and manual JSON backup. No account, backend, analytics, remote fonts, push notifications, or runtime dependencies.
 
 ## Publish on GitHub Pages
 
@@ -17,6 +17,8 @@ The workflow installs test-only dependencies, runs tests, builds `dist/`, and pu
 References: [GitHub Pages publishing settings](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site) and [custom deployment workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 
 ### Without a build workflow
+
+The build also refreshes the generated app files and icons at the repository root to preserve the existing branch-published setup. Edit `app/`, not these generated copies. Both root publishing and the workflow artifact use the same assets and keep the existing database path.
 
 The included `dist/` is already built. Copy its **contents**, including `.nojekyll`, to the root of a dedicated `gh-pages` branch. Choose **Deploy from a branch → gh-pages → /(root)** in Pages settings. When changing the app, run `npm run build` and replace that branch's published files with the new contents of `dist/`.
 
@@ -63,20 +65,20 @@ Colours and layout are in `app/styles.css`. Icons and Home Screen images are loc
 - Changing the repository name, domain, deployment path, or chosen browser does not move the database. Export from the original location before moving and import at the new one.
 - Delete person removes that person's associated records in one transaction. Delete all data clears the application's record stores in one transaction, while keeping the installed app files.
 
-## Backup format, version 1
+## Backup format, version 2
 
 Export writes `chumlog-YYYY-MM-DD.backup.json`:
 
 ```json
 {
   "app": "Chumlog",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "exportedAt": "2026-09-19T00:00:00.000Z",
   "data": {
     "people": [],
     "contacts": [],
     "notes": [],
-    "things": [],
+    "importantDates": [],
     "reminders": []
   }
 }
@@ -86,19 +88,21 @@ Every record has `id`, `createdAt`, and `updatedAt`. IDs are stable UUIDs for ne
 
 | Collection | Additional fields |
 | --- | --- |
-| `people` | `name`: nonempty string, up to 200 characters; `birthday`: `MM-DD` or `null` |
+| `people` | `name`: nonempty string, up to 200 characters; `emoji`: one emoji (including joined sequences) or `null` |
 | `contacts` | `personId`; `date`: `YYYY-MM-DD`; `type`: `message`, `call`, `inPerson`, `other`, or `null`; `note`: string or `null` |
 | `notes` | `personId`; `text`: nonempty string |
-| `things` | `personId`; `text`: nonempty string; `relevantDate`: `YYYY-MM-DD` or `null`; `archived`: boolean |
-| `reminders` | `personId`; `text`: nonempty string; `date`: `YYYY-MM-DD`; `time`: `HH:mm` or `null`; `completed`: boolean |
+| `importantDates` | `personId`; `label`: nonempty string, up to 200 characters; `yearly`: boolean; `date`: `MM-DD` when yearly, otherwise `YYYY-MM-DD` |
+| `reminders` | `personId`; `text`: nonempty string; `date`: `YYYY-MM-DD` or `null`; `time`: `HH:mm` or `null`; `completed`: boolean |
 
-Text/note fields are limited to 10,000 characters. Birthdays intentionally omit birth years. Calendar dates are local civil dates, not UTC instants. Reminder times are local wall-clock times; no timezone conversion or notification scheduling is performed. A 29 February birthday appears on 28 February in non-leap years.
+Text/note fields are limited to 10,000 characters. Yearly important dates omit years. Undated reminders have a null time. Calendar dates are local civil dates, not UTC instants. Reminder times are local wall-clock times; no timezone conversion or notification scheduling is performed. A 29 February birthday appears on 28 February in non-leap years.
 
-`Last talked` is derived from the latest contact date. Coming up contains the next occurrence of each birthday and every active dated thing/reminder, ordered by date and optional time. Past active items remain under “Earlier”. Completed things and reminders are accessible under “Done” on the profile and can be reopened.
+`Last talked` is derived from the latest contact date. The People list uses “Last contact”. Coming up contains the next occurrence of each yearly important date, current/future one-off important dates, and every active dated reminder, ordered by date and optional time. Past active reminders remain under “Earlier”. Completed reminders are accessible under “Done” on the profile and can be reopened. Undated reminders remain on the profile. Past one-off important dates remain on the profile.
+
+People default to alphabetical order. “Longest since contact” places people without logged contact first, followed by oldest last contact. “Most recently contacted” puts missing contact dates last. “Next upcoming date” uses the next date from today onward, excluding completed reminders and placing people without an upcoming item last. Ties use names. Sorting does not change any relationship data. Random person selects from the entire People list, independent of search or sorting.
 
 ### Import behaviour
 
-Version 1 supports **replacement only**, with a record-count preview, an Export action, and an explicit Replace data confirmation. Cancelling leaves current data untouched. It does not merge records.
+Import supports **replacement only**, with a record-count preview, an Export action, and an explicit Replace data confirmation. Cancelling leaves current data untouched. It does not merge records.
 
 Before any write, the importer validates the entire backup: app identifier, schema version, all required arrays/fields, dates, types, IDs, duplicate IDs, timestamps, and person references. Unknown fields are discarded. Unsupported versions, malformed files, files over 10 MB, or collections over 50,000 records are rejected.
 
@@ -118,7 +122,15 @@ Replacement runs in one IndexedDB transaction. A storage failure rolls the trans
 | `scripts/serve.mjs` | Local static server; also supports `/chumlog/` for subpath checks |
 | `tests/` | Model, storage, DOM-flow, and service-worker logic tests |
 
-IndexedDB schema version and export schema version are currently both 1. Future database migrations belong in `openDB()`'s upgrade handler, gated on `oldVersion`; never delete a database to migrate it. Update `validateBackup()` deliberately when supporting another export version. The `meta` store holds only the local revision counter and is not part of an export.
+IndexedDB schema version and export schema version are currently both 2.
+
+### v1 → v1.1 migration
+
+The version-1 database upgrades in one atomic IndexedDB transaction. Birthdays become yearly important dates labelled “Birthday”. Every `things` record becomes a reminder: `relevantDate` becomes `date` (including null), and `archived` becomes `completed`. Text, person links, created/updated timestamps and existing reminders are preserved. IDs are retained unless a thing collides with an existing reminder ID; only that migrated ID receives a fresh UUID. The old store is removed within the same transaction, and a failure rolls the entire upgrade back. Closing an older tab releases its database connection; stale version-1 code cannot write to the upgraded schema.
+
+Version-1 JSON backups are fully validated before conversion and replacement. Export always writes version 2. Version-1 app builds cannot read the upgraded database or a version-2 backup. Do not deploy old app code as a schema rollback.
+
+ Future database migrations belong in `openDB()`'s upgrade handler, gated on `oldVersion`; never delete a database to migrate it. Update `validateBackup()` deliberately when supporting another export version. The `meta` store holds only the local revision counter and is not part of an export.
 
 ## Offline updates
 
@@ -128,4 +140,4 @@ The app works without service-worker support as an ordinary online webpage. Prod
 
 ## Verification status
 
-See `VERIFICATION.md`. Automated tests pass. A live GitHub Pages deployment and physical iPhone/Safari verification remain to be done after publishing; this project does not claim those checks were performed.
+See `VERIFICATION.md`. Automated tests pass. Physical iPhone/Safari verification is separate from automated checks; this project does not claim those checks were performed.

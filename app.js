@@ -1,5 +1,5 @@
 import { S } from './strings.js';
-import { emptyData, today, validDate, validBirthday, lastContact, comingUp, makeBackup, validateBackup, TABLES } from './model.js';
+import { emptyData, today, validDate, validBirthday, validEmoji, sortPeople, randomPerson, nextBirthday, lastContact, comingUp, makeBackup, validateBackup, TABLES } from './model.js';
 import { snapshot, saveRecord, removeRecord, replaceAll, deleteAll } from './db.js';
 
 const $ = (tag, attrs = {}, ...children) => {
@@ -35,8 +35,8 @@ const formatBirthday = value => new Intl.DateTimeFormat(undefined, { day: 'numer
 const stampDate = value => new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
 const formatTime = value => new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(`2000-01-01T${value}:00`));
 const initials = name => name.trim().split(/\s+/u).slice(0, 2).map(x => [...x][0]).join('').toLocaleUpperCase();
-const avatar = (person, large = false) => $('span', { className: `avatar${large ? ' large' : ''}`, 'aria-hidden': 'true' }, initials(person.name));
-let data = emptyData(), revision = 0, search = '', loaded = false, offline = false;
+const avatar = (person, large = false) => $('span', { className: `avatar${large ? ' large' : ''}`, 'aria-hidden': 'true' }, person.emoji || initials(person.name));
+let data = emptyData(), revision = 0, search = '', sortOrder = 'alphabetical', loaded = false, offline = false;
 let main, notice, dialog, confirmDialog, nav, toastTimer, registration, stale = false;
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel(`chumlog:${new URL('.', import.meta.url).pathname}`) : null;
 const alertError = error => error.message === 'CONFLICT' ? S.conflict : error.message === 'STALE_IMPORT' ? S.staleImport : error.message === 'PERSON_MISSING' ? S.personMissing : S.operationError;
@@ -102,14 +102,18 @@ function renderPeople() {
   const list = $('div', { className: 'people-list' });
   const searchInput = $('input', { type: 'search', value: search, id: 'search', placeholder: S.search, autocomplete: 'off', onInput: e => { search = e.target.value; populate(); } });
   const populate = () => {
-    const people = data.people.filter(p => p.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())).sort((a,b) => a.name.localeCompare(b.name));
+    const people = sortPeople(data, data.people.filter(p => p.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())), sortOrder);
     list.replaceChildren(...people.map(p => {
       const last = lastContact(data, p.id);
-      return $('a', { href: `#person/${p.id}`, className: 'person-row' }, avatar(p), $('span', { className: 'person-label' }, $('span', { className: 'person-name' }, p.name), last && $('span', { className: 'meta' }, `${S.lastTalked} · ${formatDate(last)}`)), icon('next'));
+      return $('a', { href: `#person/${p.id}`, className: 'person-row' }, avatar(p), $('span', { className: 'person-label' }, $('span', { className: 'person-name' }, p.name), last && $('span', { className: 'meta' }, `${S.lastContact} · ${formatDate(last)}`)), icon('next'));
     }));
     if (search && !people.length) list.append($('p', { className: 'quiet empty-result', role: 'status' }, S.noResults));
   };
-  main.append(header(S.people, button(S.addPerson, () => editPerson(), 'primary', 'plus')), $('div', { className: 'search-field' }, icon('search'), $('label', { for: 'search', className: 'sr-only' }, S.search), searchInput), list);
+  const sort = field(S.sort, 'sort', { options: ['alphabetical','longest','recent','next'].map(key => [key,S[key]]), value: sortOrder });
+  sort.querySelector('select').addEventListener('change', e => { sortOrder = e.target.value; populate(); });
+  const random = button(S.random, () => { const person = randomPerson(data.people); if (person) location.hash = `#person/${person.id}`; }, 'text-button');
+  random.disabled = !data.people.length;
+  main.append(header(S.people, button(S.addPerson, () => editPerson(), 'primary', 'plus')), $('div', { className: 'search-field' }, icon('search'), $('label', { for: 'search', className: 'sr-only' }, S.search), searchInput), $('div', { className: 'people-tools' }, sort, random), list);
   populate();
 }
 function section(title, addLabel, onAdd, children, kind = '') {
@@ -120,32 +124,38 @@ function renderPerson(id) {
   if (!person) { location.replace('#people'); return; }
   const last = lastContact(data, id);
   const subrecords = table => data[table].filter(x => x.personId === id);
-  const things = subrecords('things'), reminders = subrecords('reminders');
-  const dated = (a,b) => (a.relevantDate || a.date || '9999').localeCompare(b.relevantDate || b.date || '9999') || b.createdAt.localeCompare(a.createdAt);
-  main.append(link(S.back, '#people', 'back-link', 'back'), $('header', { className: 'profile-header' }, avatar(person, true), $('div', { className: 'profile-title' }, $('h1', { tabindex: '-1' }, person.name), $('div', { className: 'profile-meta' }, person.birthday && $('span', {}, `${S.birthday} · ${formatBirthday(person.birthday)}`), last && $('span', {}, `${S.lastTalked} · ${formatDate(last)}`))), button(S.edit, () => editPerson(person), 'text-button')),
+  const reminders = subrecords('reminders');
+  const importantDates = subrecords('importantDates').sort((a,b) => (a.yearly ? nextBirthday(a.date) : a.date).localeCompare(b.yearly ? nextBirthday(b.date) : b.date));
+  const dated = (a,b) => (a.date || '9999').localeCompare(b.date || '9999') || b.createdAt.localeCompare(a.createdAt);
+  main.append(link(S.back, '#people', 'back-link', 'back'), $('header', { className: 'profile-header' }, avatar(person, true), $('div', { className: 'profile-title' }, $('h1', { tabindex: '-1' }, person.name), $('div', { className: 'profile-meta' }, last && $('span', {}, `${S.lastTalked} · ${formatDate(last)}`))), button(S.edit, () => editPerson(person), 'text-button')),
     $('div', { className: 'profile-actions' }, button(S.logContact, () => editEntry('contacts', person), 'primary', 'plus')));
-  const thingSection = section(S.things, S.addThing, () => editEntry('things', person), things.filter(x => !x.archived).sort(dated).map(x => entry('things', x, person)), 'things-section');
-  thingSection.querySelector('button').setAttribute('aria-label', S.addThing);
+  const dateSection = section(S.importantDates, S.addDate, () => editImportantDate(person), importantDates.map(row => $('article', { className: 'entry', 'data-record': row.id }, $('p', { className: 'entry-text' }, row.label), $('div', { className: 'entry-date' }, row.yearly ? formatBirthday(row.date) : formatDate(row.date)), $('div', { className: 'entry-actions' }, button(S.edit, () => editImportantDate(person, row), 'text-button'), button(S.delete, () => deleteEntry('importantDates', row), 'text-button')))), 'dates-section');
+  dateSection.querySelector('button').setAttribute('aria-label', S.addDate);
   const reminderSection = section(S.reminders, S.addReminder, () => editEntry('reminders', person), reminders.filter(x => !x.completed).sort(dated).map(x => entry('reminders', x, person)), 'reminders-section');
   reminderSection.querySelector('button').setAttribute('aria-label', S.addReminder);
-  const completedItems = [...things.filter(x => x.archived).map(x => ['things', x]), ...reminders.filter(x => x.completed).map(x => ['reminders', x])];
+  const completedItems = reminders.filter(x => x.completed).map(x => ['reminders', x]);
   if (completedItems.length) reminderSection.append($('details', { className: 'completed-items' }, $('summary', {}, S.done), completedItems.sort((a,b) => b[1].updatedAt.localeCompare(a[1].updatedAt)).map(([table,row]) => entry(table,row,person))));
   const noteSection = section(S.notes, S.addNote, () => editEntry('notes', person), subrecords('notes').sort((a,b) => b.updatedAt.localeCompare(a.updatedAt)).map(x => entry('notes',x,person)), 'notes-section');
   noteSection.querySelector('button').setAttribute('aria-label', S.addNote);
   const contactSection = $('section', { className: 'profile-section contacts-section' }, $('div', { className: 'section-heading' }, $('h2', {}, S.contacts)), subrecords('contacts').sort((a,b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)).map(x => entry('contacts',x,person)));
-  main.append($('div', { className: 'profile-grid' }, thingSection, reminderSection, noteSection, contactSection));
+  main.append($('div', { className: 'profile-grid' }, noteSection, reminderSection, dateSection, contactSection));
 }
 function entry(table, row, person) {
   const isContact = table === 'contacts', isNote = table === 'notes';
-  const date = row.relevantDate || row.date;
-  const finished = row.archived || row.completed;
+  const date = row.date;
+  const finished = row.completed;
   const node = $('article', { className: `entry ${finished ? 'finished' : ''}`, 'data-record': row.id });
-  if (isContact) node.append($('div', { className: 'entry-date' }, formatDate(row.date), row.type && $('span', { className: 'quiet' }, ` · ${S.contactTypes[row.type]}`)), row.note && $('p', { className: 'entry-text' }, row.note));
-  else node.append($('p', { className: 'entry-text' }, row.text), date && $('div', { className: 'entry-date' }, formatDate(date), row.time ? ` · ${formatTime(row.time)}` : ''));
+  if (isContact) {
+    node.append($('div', { className: 'entry-date' }, formatDate(row.date), row.type && $('span', { className: 'quiet' }, ` · ${S.contactTypes[row.type]}`)));
+    if (row.note) node.append($('p', { className: 'entry-text' }, row.note));
+  } else {
+    node.append($('p', { className: 'entry-text' }, row.text));
+    if (date) node.append($('div', { className: 'entry-date' }, formatDate(date), row.time ? ` · ${formatTime(row.time)}` : ''));
+  }
   if (isNote) node.append($('div', { className: 'meta', title: `${S.created}: ${stampDate(row.createdAt)}` }, stampDate(row.updatedAt)));
   const actions = $('div', { className: 'entry-actions' }, button(S.edit, () => editEntry(table, person, row), 'text-button'), button(S.delete, () => deleteEntry(table, row), 'text-button'));
   if (!isNote && !isContact) actions.prepend(button(finished ? S.reopen : S.done, async () => {
-    try { await saveRecord(table, { ...row, [table === 'things' ? 'archived' : 'completed']: !finished }, row); await changed(S.saved); } catch (error) { announce(alertError(error)); }
+    try { await saveRecord(table, { ...row, completed: !finished }, row); await changed(S.saved); } catch (error) { announce(alertError(error)); }
   }, 'text-button', finished ? undefined : 'check'));
   node.append(actions); return node;
 }
@@ -163,11 +173,11 @@ function renderComingUp() {
     for (const row of rows) {
       const d = new Date(`${row.date}T12:00:00`);
       const dateblock = $('div', { className: 'date-block', 'aria-label': formatDate(row.date) }, $('span', {}, new Intl.DateTimeFormat(undefined, { month: 'short' }).format(d)), $('strong', {}, d.getDate()));
-      const content = $('div', { className: 'agenda-content' }, link(row.person.name, `#person/${row.personId}`, 'agenda-person'), $('p', {}, row.kind === 'birthday' ? S.birthday : row.text), $('span', { className: 'meta' }, row.date === now ? S.today : formatDate(row.date), row.time ? ` · ${formatTime(row.time)}` : ''));
-      const item = $('article', { className: `agenda-item ${row.kind === 'birthday' ? 'birthday-item' : ''}` }, dateblock, content);
-      if (row.kind !== 'birthday') item.append(button(S.done, async () => {
+      const content = $('div', { className: 'agenda-content' }, link(row.person.name, `#person/${row.personId}`, 'agenda-person'), $('p', {}, row.kind === 'importantDates' ? row.label : row.text), $('span', { className: 'meta' }, row.date === now ? S.today : formatDate(row.date), row.time ? ` · ${formatTime(row.time)}` : ''));
+      const item = $('article', { className: `agenda-item ${row.kind === 'importantDates' ? 'birthday-item' : ''}` }, dateblock, content);
+      if (row.kind !== 'importantDates') item.append(button(S.done, async () => {
         const original = data[row.kind].find(x => x.id === row.id);
-        try { await saveRecord(row.kind, { ...original, [row.kind === 'things' ? 'archived' : 'completed']: true }, original); await changed(S.saved); } catch (error) { announce(alertError(error)); }
+        try { await saveRecord(row.kind, { ...original, completed: true }, original); await changed(S.saved); } catch (error) { announce(alertError(error)); }
       }, 'text-button', 'check'));
       group.append(item);
     }
@@ -235,13 +245,13 @@ function showEditor(title, fields, onSave, destructive = null) {
   form.addEventListener('submit', async e => {
     e.preventDefault(); if (busy) return;
     for (const input of form.querySelectorAll('input, textarea')) {
-      if (input.required && !input.value.trim()) { input.setCustomValidity(S.required); input.reportValidity(); return; }
+      if (!input.disabled && input.required && !input.value.trim()) { input.setCustomValidity(S.required); input.reportValidity(); return; }
     }
     busy = true; save.disabled = true; cancel.disabled = true; errorNode.hidden = true;
     try {
       await onSave(new FormData(form));
       dialog.close(); await changed(S.saved); focusHeading();
-    } catch (error) { errorNode.textContent = ['CONFLICT','PERSON_MISSING'].includes(error.message) ? alertError(error) : error.message === 'BIRTHDAY' ? S.birthdayError : error.message === 'DATE' ? S.dateError : error.message === 'FUTURE' ? S.futureContact : S.saveError; errorNode.hidden = false; }
+    } catch (error) { errorNode.textContent = ['CONFLICT','PERSON_MISSING'].includes(error.message) ? alertError(error) : error.message === 'EMOJI' ? S.emojiError : error.message === 'BIRTHDAY' ? S.birthdayError : error.message === 'DATE' ? S.dateError : error.message === 'FUTURE' ? S.futureContact : S.saveError; errorNode.hidden = false; }
     finally { busy = false; save.disabled = false; cancel.disabled = false; }
   });
   dialog.replaceChildren(...[$('h2', { id: 'dialog-title' }, title), form, destructive].filter(Boolean));
@@ -250,30 +260,54 @@ function showEditor(title, fields, onSave, destructive = null) {
   form.querySelector('input,textarea,select')?.focus();
 }
 function editPerson(original = null) {
-  const months = [['','—'], ...Array.from({ length: 12 }, (_,i) => [String(i+1).padStart(2,'0'), new Intl.DateTimeFormat(undefined, { month: 'long' }).format(new Date(2000,i,1))])];
-  const days = [['','—'], ...Array.from({ length: 31 }, (_,i) => [String(i+1).padStart(2,'0'), String(i+1)])];
-  const fields = [field(S.name,'name',{ value: original?.name || '', required: true, maxLength: 200, autocomplete: 'off' }), $('fieldset', { className: 'birthday-fields' }, $('legend', {}, optional(S.birthday)), field(S.month,'month',{ options: months, value: original?.birthday?.slice(0,2) || '' }), field(S.day,'day',{ options: days, value: original?.birthday?.slice(3) || '' }))];
+  const fields = [field(S.name,'name',{ value: original?.name || '', required: true, maxLength: 200, autocomplete: 'off' }), field(optional(S.emoji),'emoji',{ value: original?.emoji || '', maxLength: 64, autocomplete: 'off' })];
   const destructive = original && button(S.deletePerson, async () => {
     const approved = await confirmAction(S.deletePersonQuestion, S.deletePersonDetail, S.delete, async () => { await removeRecord('people',original); dialog.close(); location.hash = '#people'; await changed(S.deleted); });
     if (approved) focusHeading();
   }, 'danger-text delete-person');
   showEditor(original ? S.editPerson : S.addPerson, fields, async form => {
-    const month = form.get('month'), day = form.get('day');
-    const birthday = month || day ? `${month}-${day}` : null;
-    if (birthday && !validBirthday(birthday)) throw new Error('BIRTHDAY');
-    const saved = await saveRecord('people',{ name: form.get('name').trim(), birthday },original);
+    const emoji = form.get('emoji').trim() || null;
+    if (emoji && !validEmoji(emoji)) throw new Error('EMOJI');
+    const saved = await saveRecord('people',{ name: form.get('name').trim(), emoji },original);
     if (!original) location.hash = `#person/${saved.id}`;
   }, destructive);
 }
+function editImportantDate(person, original = null) {
+  const months = [['','—'], ...Array.from({ length: 12 }, (_,i) => [String(i+1).padStart(2,'0'), new Intl.DateTimeFormat(undefined, { month: 'long' }).format(new Date(2000,i,1))])];
+  const days = [['','—'], ...Array.from({ length: 31 }, (_,i) => [String(i+1).padStart(2,'0'), String(i+1)])];
+  const annual = original?.yearly ?? true;
+  const check = $('input', { id: 'field-yearly', name: 'yearly', type: 'checkbox', checked: annual });
+  const monthDay = $('fieldset', { className: 'birthday-fields' }, $('legend', {}, S.date), field(S.month,'month',{ options: months, value: annual ? original?.date?.slice(0,2) || '' : '' }), field(S.day,'day',{ options: days, value: annual ? original?.date?.slice(3) || '' : '' }));
+  const fullDate = field(S.date, 'date', { type: 'date', value: !annual ? original?.date || '' : '', min: '0001-01-01' });
+  const toggle = () => {
+    monthDay.hidden = !check.checked; fullDate.hidden = check.checked;
+    for (const input of monthDay.querySelectorAll('select')) { input.disabled = !check.checked; input.required = check.checked; }
+    fullDate.querySelector('input').disabled = check.checked;
+    fullDate.querySelector('input').required = !check.checked;
+  };
+  check.addEventListener('change', toggle); toggle();
+  showEditor(original ? S.editDate : S.addDate, [field(S.label,'label',{ value: original?.label || '', required: true, maxLength: 200 }), $('div', { className: 'check-field' }, check, $('label', { for: 'field-yearly' }, S.yearly)), monthDay, fullDate], async form => {
+    const yearly = form.has('yearly');
+    const date = yearly ? `${form.get('month')}-${form.get('day')}` : form.get('date');
+    if (!(yearly ? validBirthday(date) : validDate(date))) throw new Error(yearly ? 'BIRTHDAY' : 'DATE');
+    await saveRecord('importantDates', { personId: person.id, label: form.get('label').trim(), date, yearly }, original);
+  });
+}
 function editEntry(table, person, original = null) {
   const fields = [];
-  const titles = { notes: [S.addNote,S.editNote], things: [S.addThing,S.editThing], reminders: [S.addReminder,S.editReminder], contacts: [S.logContact,S.editContact] };
+  const titles = { notes: [S.addNote,S.editNote], reminders: [S.addReminder,S.editReminder], contacts: [S.logContact,S.editContact] };
   if (table === 'contacts') {
     fields.push(field(S.date,'date',{ type: 'date', value: original?.date || today(), required: true, max: today(), min: '0001-01-01' }), field(optional(S.type),'type',{ options: [['','—'],...Object.entries(S.contactTypes)], value: original?.type || '' }), field(optional(S.note),'note',{ value: original?.note || '', multiline: true }));
   } else {
     fields.push(field(S.text,'text',{ value: original?.text || '', multiline: true, required: true }));
-    if (table !== 'notes') fields.push(field(table === 'things' ? optional(S.date) : S.date,'date',{ type: 'date', value: original?.relevantDate || original?.date || '', required: table === 'reminders', min: '0001-01-01' }));
+    if (table !== 'notes') fields.push(field(optional(S.date),'date',{ type: 'date', value: original?.date || '', required: false, min: '0001-01-01' }));
     if (table === 'reminders') fields.push(field(optional(S.time),'time',{ type: 'time', value: original?.time || '' }));
+  }
+  if (table === 'reminders') {
+    const dateInput = fields[1].querySelector('input');
+    const timeInput = fields[2].querySelector('input');
+    const toggleTime = () => { timeInput.disabled = !dateInput.value; };
+    dateInput.addEventListener('input', toggleTime); toggleTime();
   }
   showEditor(titles[table][original ? 1 : 0], fields, async form => {
     const date = form.get('date') || null;
@@ -282,8 +316,7 @@ function editEntry(table, person, original = null) {
     const values = { personId: person.id };
     if (table === 'contacts') Object.assign(values, { date, type: form.get('type') || null, note: form.get('note').trim() || null });
     else values.text = form.get('text').trim();
-    if (table === 'things') Object.assign(values,{ relevantDate: date, archived: original?.archived || false });
-    if (table === 'reminders') Object.assign(values,{ date, time: form.get('time') || null, completed: original?.completed || false });
+    if (table === 'reminders') Object.assign(values,{ date, time: date ? form.get('time') || null : null, completed: original?.completed || false });
     await saveRecord(table,values,original);
   });
 }
@@ -305,7 +338,7 @@ async function importFile(file) {
   catch { announce(S.invalidImport); return; }
   try {
     const current = await snapshot();
-    const names = { people: S.people, contacts: S.contacts, notes: S.notes, things: S.things, reminders: S.reminders };
+    const names = { people: S.people, contacts: S.contacts, notes: S.notes, importantDates: S.importantDates, reminders: S.reminders };
     const preview = $('dl',{ className: 'import-counts' },TABLES.map(k => [$('dt',{},names[k]),$('dd',{},incoming[k].length)]));
     const extra = $('div', {}, preview, button(S.export,exportData,'secondary','download'));
     await confirmAction(S.importTitle,S.importDetail,S.replace,async () => { await replaceAll(backup,current.revision); await changed(S.imported); },extra);

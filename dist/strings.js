@@ -1,6 +1,6 @@
 // All application interface wording lives here. No user data belongs in this file.
 export const S = Object.freeze({
-  app: 'Chumlog', tagline: 'Log your chums.', version: '1.0.0',
+  app: 'Chumlog', tagline: 'Log your chums.', version: '1.1.0',
   javascriptRequired: 'JavaScript required.',
   people: 'People', comingUp: 'Coming up', settings: 'Settings',
   addPerson: 'Add person', editPerson: 'Edit person', deletePerson: 'Delete person',
@@ -8,7 +8,9 @@ export const S = Object.freeze({
   search: 'Search people', noResults: 'No results',
   edit: 'Edit', delete: 'Delete', save: 'Save', cancel: 'Cancel', add: 'Add', done: 'Done', reopen: 'Reopen',
   lastTalked: 'Last talked', notes: 'Notes', addNote: 'Add note', editNote: 'Edit note',
-  things: 'Things to ask about', addThing: 'Add thing to ask about', editThing: 'Edit thing to ask about',
+  importantDates: 'Important dates', addDate: 'Add important date', editDate: 'Edit important date',
+  label: 'Label', yearly: 'Repeat yearly', emoji: 'Emoji', emojiError: 'Enter one emoji, or leave blank.',
+  sort: 'Sort', alphabetical: 'Alphabetical', longest: 'Longest since contact', recent: 'Most recently contacted', next: 'Next upcoming date', random: 'Random person', lastContact: 'Last contact',
   reminders: 'Reminders', addReminder: 'Add reminder', editReminder: 'Edit reminder',
   contacts: 'Contact history', logContact: 'Log contact', editContact: 'Edit contact',
   text: 'Text', date: 'Date', time: 'Time', type: 'Type', note: 'Note',

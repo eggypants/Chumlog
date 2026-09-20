@@ -24,4 +24,7 @@ const manifest = JSON.parse(await readFile(`${root}dist/manifest.webmanifest`, '
 manifest.name = S.app; manifest.short_name = S.app;
 await writeFile(`${root}dist/manifest.webmanifest`, JSON.stringify(manifest, null, 2) + '\n');
 await writeFile(`${root}dist/.nojekyll`, '');
+// Keep the existing branch-published root identical to the workflow artifact.
+// Only copy the known generated app files; never delete repository content.
+for (const item of await readdir(`${root}dist`)) await cp(`${root}dist/${item}`, `${root}${item}`, { recursive: true });
 console.log(`Chumlog ${S.version}: dist/ ready (${release}).`);

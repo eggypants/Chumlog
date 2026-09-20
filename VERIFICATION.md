@@ -1,6 +1,6 @@
 # Verification
 
-The source and static build were checked on 19 September 2026.
+The source and static build were checked on 20 September 2026.
 
 ## Automated checks
 
@@ -8,20 +8,26 @@ The source and static build were checked on 19 September 2026.
 
 Covered flows:
 
-- Create a person with a birthday; read it again after reopening the database.
+- Create a person with an emoji; read it again after reopening the database.
 - Edit a person; reject stale edits; delete the person and all associated records atomically.
 - Add, edit, and delete notes; render user-entered HTML as plain text.
-- Create a dated thing to ask about; mark done and reopen it.
+- Create dated/undated reminders; mark done and reopen them.
 - Log and edit contact; derive Last talked from contact dates; delete contacts.
 - Create dated reminders with optional times; complete them.
-- Combine birthdays and active dated records in Coming up; retain past active items; exclude completed records.
+- Combine important dates and active dated records in Coming up; retain past active items; exclude completed records.
 - Search people, including case-insensitive matching and no results.
 - Export from Settings, validate the resulting JSON, preview/cancel an import, and confirm replacement.
 - Reject malformed/unsupported backups, duplicate IDs, orphaned records, invalid dates and types.
 - Prevent a stale import from replacing data edited after its preview.
 - Roll back an import when a simulated storage failure occurs after clearing begins.
 - Keep unsaved input visible when a write fails; successfully retry the save.
-- Handle leap-day birthdays and year boundaries.
+- Handle leap-day yearly dates and year boundaries.
+- Add/edit/delete multiple important dates, including yearly and one-off dates.
+- Sort by name, contact dates and upcoming dates, including missing dates and ties; select a random person.
+- Omit null contact-note text and render emoji on the list and profile.
+- Upgrade a populated version-1 database, including undated/completed things and colliding IDs; preserve all records and timestamps.
+- Roll back a failed database upgrade, retry it, and reopen without duplicate migration.
+- Import old backups and export/re-import version-2 backups.
 - Cache relative app URLs under a GitHub Pages-style project path; serve cached navigation/assets with no network request.
 - Keep failed service-worker installs inactive; activate an update only on the defined activation message; preserve unrelated caches.
 
@@ -31,7 +37,7 @@ Covered flows:
 
 The remote browser preview could not be reached in this build environment. Accordingly, visual layout, native dialog focus behaviour, real IndexedDB browser persistence, real offline installation/update behaviour, downloads/import file picking, and screen-reader operation have **not** been verified in Chrome or Safari. DOM tests do not establish those browser guarantees.
 
-The source is being published to `eggypants/Chumlog`. The included workflow follows GitHub's documented Pages process. An actual GitHub Pages deployment and its public URL still need to be verified.
+The project is published at `https://eggypants.github.io/Chumlog/`. Version 1.1 deployment status is recorded in GitHub Actions. Browser/device limitations above still apply.
 
 After publishing, use disposable test records to check:
 

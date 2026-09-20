@@ -8,15 +8,15 @@ import { makeBackup, emptyData } from '../app/model.js';
 test('IndexedDB lifecycle, conflict protection, import and rollback', async t => {
   let person;
   await t.test('add and reload from the database', async () => {
-    person=await saveRecord('people',{name:'Test Person',birthday:'02-29'});
+    person=await saveRecord('people',{name:'Test Person',emoji:'🐦'});
     assert.deepEqual((await snapshot()).data.people,[person]);
     const db=await openDB(); db.onversionchange();
     assert.equal((await snapshot()).data.people[0].name,'Test Person');
   });
   await t.test('update and reject a stale edit without overwriting', async () => {
     const original=person;
-    person=await saveRecord('people',{name:'Edited Person',birthday:'02-29'},original);
-    await assert.rejects(saveRecord('people',{name:'Stale',birthday:null},original),/CONFLICT/);
+    person=await saveRecord('people',{name:'Edited Person',emoji:'🐦'},original);
+    await assert.rejects(saveRecord('people',{name:'Stale',emoji:null},original),/CONFLICT/);
     assert.deepEqual((await snapshot()).data.people,[person]);
   });
   await t.test('create, edit, complete, reopen and remove linked records', async () => {
@@ -25,10 +25,10 @@ test('IndexedDB lifecycle, conflict protection, import and rollback', async t =>
     assert.equal((await snapshot()).data.notes[0].text,'Edited note');
     await removeRecord('notes',note);
     assert.equal((await snapshot()).data.notes.length,0);
-    let thing=await saveRecord('things',{personId:person.id,text:'An item',relevantDate:'2026-10-01',archived:false});
-    thing=await saveRecord('things',{...thing,archived:true},thing);
-    assert.equal((await snapshot()).data.things[0].archived,true);
-    thing=await saveRecord('things',{...thing,archived:false},thing);
+    let thing=await saveRecord('importantDates',{personId:person.id,label:'Anniversary',date:'10-01',yearly:true});
+    thing=await saveRecord('importantDates',{...thing,date:'10-02'},thing);
+    assert.equal((await snapshot()).data.importantDates[0].date,'10-02');
+    assert.equal((await snapshot()).data.importantDates.length,1);
     let contact=await saveRecord('contacts',{personId:person.id,date:'2026-09-19',type:null,note:null});
     contact=await saveRecord('contacts',{...contact,date:'2026-09-18',type:'call'},contact);
     await removeRecord('contacts',contact);
@@ -46,7 +46,7 @@ test('IndexedDB lifecycle, conflict protection, import and rollback', async t =>
   });
   await t.test('invalid import and stale replacement leave everything intact', async () => {
     const before=await snapshot();
-    const invalid=structuredClone(backup); invalid.data.people[0].birthday='04-31';
+    const invalid=structuredClone(backup); invalid.data.importantDates[0].date='04-31';
     await assert.rejects(replaceAll(invalid,before.revision),/INVALID_BACKUP/);
     await assert.rejects(replaceAll(backup,before.revision-1),/STALE_IMPORT/);
     assert.deepEqual(await snapshot(),before);
@@ -63,6 +63,6 @@ test('IndexedDB lifecycle, conflict protection, import and rollback', async t =>
     await removeRecord('people',person);
     assert.deepEqual((await snapshot()).data,emptyData());
     await assert.rejects(saveRecord('notes',{personId:person.id,text:'Stale note'}),/PERSON_MISSING/);
-    await assert.rejects(saveRecord('people',{name:'Stale',birthday:null},person),/CONFLICT/);
+    await assert.rejects(saveRecord('people',{name:'Stale',emoji:null},person),/CONFLICT/);
   });
 });

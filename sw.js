@@ -1,8 +1,8 @@
 /* Build substitutes the release hash. App content only; never IndexedDB records. */
-const RELEASE = '9ea80965fd8dc1ca';
+const RELEASE = '38f196ed95fb928a';
 const PREFIX = `chumlog:${self.registration.scope}:`;
 const CACHE = PREFIX + RELEASE;
-const FILES = ['index.html','styles.css','app.js','db.js','model.js','strings.js','manifest.webmanifest','dist/icons/icon.svg','dist/icons/icon-192.png','dist/icons/icon-512.png','dist/icons/maskable-512.png','dist/icons/apple-touch-icon.png'];
+const FILES = ['index.html','styles.css','app.js','db.js','model.js','strings.js','manifest.webmanifest','icons/icon.svg','icons/icon-192.png','icons/icon-512.png','icons/maskable-512.png','icons/apple-touch-icon.png'];
 const urls = FILES.map(path => new URL(path, self.registration.scope).href);
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(urls.map(url => new Request(url, { cache: 'reload' })))));

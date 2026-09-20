@@ -1,4 +1,4 @@
-import { TABLES, SCHEMA_VERSION, makeBackup, validateBackup } from './model.js';
+import { TABLES, LEGACY_TABLES, SCHEMA_VERSION, makeBackup, validateBackup, migrateV1 } from './model.js';
 
 // Separate databases for different deployment paths on the same GitHub Pages origin.
 const DB_NAME = `chumlog:${new URL('.', import.meta.url).pathname}`;
@@ -9,14 +9,40 @@ export async function openDB() {
   if (connection) return connection;
   connection = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, SCHEMA_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      // Future migrations belong here, gated on event.oldVersion.
-      for (const table of TABLES) {
-        const store = db.createObjectStore(table, { keyPath: 'id' });
-        if (table !== 'people') store.createIndex('personId', 'personId');
+    request.onupgradeneeded = event => {
+      const db = request.result, tx = request.transaction;
+      if (event.oldVersion === 0) {
+        for (const table of TABLES) {
+          const store = db.createObjectStore(table, { keyPath: 'id' });
+          if (table !== 'people') store.createIndex('personId', 'personId');
+        }
+        db.createObjectStore('meta', { keyPath: 'id' });
+      } else if (event.oldVersion === 1) {
+        // All reads/writes and the store removal share the upgrade transaction.
+        // Failure rolls everything back to v1; no partial migration is visible.
+        const dates = db.createObjectStore('importantDates', { keyPath: 'id' });
+        dates.createIndex('personId', 'personId');
+        const legacy = {};
+        let remaining = LEGACY_TABLES.length;
+        for (const table of LEGACY_TABLES) {
+          const read = tx.objectStore(table).getAll();
+          read.onsuccess = () => {
+            legacy[table] = read.result;
+            if (--remaining) return;
+            try {
+              const migrated = migrateV1(legacy);
+              for (const name of TABLES) {
+                const store = tx.objectStore(name);
+                store.clear();
+                for (const row of migrated[name]) store.add(row);
+              }
+              db.deleteObjectStore('things');
+              const revision = tx.objectStore('meta').get('revision');
+              revision.onsuccess = () => tx.objectStore('meta').put({ id: 'revision', value: (revision.result?.value || 0) + 1 });
+            } catch { tx.abort(); }
+          };
+        }
       }
-      db.createObjectStore('meta', { keyPath: 'id' });
     };
     request.onsuccess = () => {
       const db = request.result;
